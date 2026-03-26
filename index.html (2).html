@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Pro Inventory Audit</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#000;--surface:#0a0a0a;--surface2:#111;--surface3:#181818;
+  --border:rgba(255,255,255,0.22);--border-dim:rgba(255,255,255,0.08);
+  --text:#f0f0ef;--muted:#666870;
+  --green:#1adb8a;--green-dim:rgba(26,219,138,0.10);
+  --red:#f05050;--red-dim:rgba(240,80,80,0.10);
+  --amber:#f5a623;--amber-dim:rgba(245,166,35,0.10);
+  --blue:#4e9af1;--blue-dim:rgba(78,154,241,0.10);
+  --radius:14px;--radius-sm:9px;--radius-xs:6px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:'Syne',-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+
+/* UI ELEMENTS */
+.header{background:#000;border-bottom:1.5px solid var(--border);padding:0 1.5rem;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:200;}
+.logo{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:700;}
+.logo span{color:var(--green);}
+.btn-primary{background:var(--green);color:#020f07;border:none;border-radius:var(--radius-sm);padding:8px 16px;font-weight:700;cursor:pointer;}
+.btn-secondary{background:#1a1a1a;border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:7px 13px;color:#b0b3bc;cursor:pointer;}
+
+.main{max-width:1200px;margin:0 auto;padding:1.5rem;}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:1.5rem;}
+.stat-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:1rem;}
+.stat-label{font-size:9px;font-weight:600;text-transform:uppercase;color:var(--muted);}
+.stat-value{font-family:'DM Mono',monospace;font-size:22px;color:var(--green);}
+
+.toolbar{display:flex;gap:10px;margin-bottom:1rem;}
+.search-wrap{flex:1;position:relative;}
+.search-wrap input{width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;color:var(--text);outline:none;}
+.filter-select{background:var(--surface);border:1.5px solid var(--border);color:var(--text);padding:10px;border-radius:var(--radius-sm);}
+
+/* TABLE STYLES */
+.table-card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);overflow:hidden;}
+table{width:100%;border-collapse:collapse;}
+th{padding:12px;background:var(--surface2);font-size:10px;text-transform:uppercase;color:var(--muted);text-align:left;border-bottom:1.5px solid var(--border);}
+td{padding:12px;border-bottom:1px solid var(--border-dim);font-size:13px;}
+.qty-badge{padding:3px 8px;border-radius:12px;font-family:'DM Mono';background:var(--green-dim);color:var(--green);}
+
+/* MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:300;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--surface);border:1.5px solid var(--border);padding:2rem;border-radius:var(--radius);width:100%;max-width:500px;}
+.form-group{margin-bottom:15px;}
+.form-group label{display:block;font-size:11px;color:var(--muted);margin-bottom:5px;}
+.form-group input, .form-group select{width:100%;background:var(--surface2);border:1.5px solid var(--border);padding:12px;color:var(--text);border-radius:var(--radius-sm);}
+.form-group input[readonly]{background:var(--bg);color:var(--amber);border-style:dashed;}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:var(--green);color:#000;padding:10px 20px;border-radius:8px;display:none;z-index:1000;}
+
+@media(max-width:700px){ .stats-grid{grid-template-columns:1fr 1fr;} }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">INVENTORY<span>.</span>AUDIT</div>
+  <div class="hdr-actions">
+    <button class="btn-secondary" onclick="exportToExcel()">↓ Export Excel</button>
+    <button class="btn-primary" id="btn-add-item">+ Add Item</button>
+  </div>
+</header>
+
+<main class="main">
+  <div class="stats-grid">
+    <div class="stat-card"><div class="stat-label">Total Items</div><div class="stat-value" id="stat-total">0</div></div>
+    <div class="stat-card"><div class="stat-label">Stock Value</div><div class="stat-value" id="stat-qty" style="color:var(--blue)">0</div></div>
+  </div>
+
+  <div class="toolbar">
+    <div class="search-wrap">
+      <input type="text" id="search-input" placeholder="Search by name or code...">
+    </div>
+    <select id="dept-filter" class="filter-select">
+        <option value="">All Depts</option>
+        <option value="Mechanical">Mechanical</option>
+        <option value="Electrical">Electrical</option>
+        <option value="IT">IT</option>
+        <option value="Stores">Stores</option>
+    </select>
+  </div>
+
+  <div class="table-card">
+    <table id="inventory-table">
+      <thead>
+        <tr>
+          <th>Item Code</th>
+          <th>Item Name</th>
+          <th>Department</th>
+          <th>Quantity</th>
+          <th style="text-align:right">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
+</main>
+
+<div class="modal-overlay" id="modal">
+  <div class="modal">
+    <h3 id="modal-title" style="margin-bottom:20px">Add New Item</h3>
+    <div class="form-group">
+      <label>Item Code (Auto-Generated)</label>
+      <input type="text" id="f-code" readonly>
+    </div>
+    <div class="form-group">
+      <label>Item Name</label>
+      <input type="text" id="f-name" placeholder="Enter item name">
+    </div>
+    <div class="form-group">
+      <label>Department</label>
+      <select id="f-dept">
+        <option value="Mechanical">Mechanical</option>
+        <option value="Electrical">Electrical</option>
+        <option value="IT">IT</option>
+        <option value="Stores">Stores</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Quantity Available</label>
+      <input type="number" id="f-qty" placeholder="0">
+    </div>
+    <div style="display:flex;gap:10px;margin-top:20px;">
+      <button class="btn-primary" style="flex:1" onclick="saveItem()">Save Entry</button>
+      <button class="btn-secondary" style="flex:1" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Success!</div>
+
+<script>
+let items = JSON.parse(localStorage.getItem('audit_data')) || [];
+let editId = null;
+
+// --- AUTO GENERATION LOGIC ---
+function generateNextCode() {
+    if (items.length === 0) return "AUD-00001";
+    
+    // Extract numbers from all codes, find the max
+    const nums = items.map(i => {
+        const match = i.code.match(/\d+/);
+        return match ? parseInt(match[0]) : 0;
+    });
+    
+    const maxNum = Math.max(...nums);
+    return "AUD-" + (maxNum + 1).toString().padStart(5, '0');
+}
+
+function render() {
+    const tbody = document.getElementById('table-body');
+    const searchTerm = document.getElementById('search-input').value.toLowerCase();
+    const deptTerm = document.getElementById('dept-filter').value;
+    
+    tbody.innerHTML = '';
+    let filtered = items.filter(i => 
+        (i.name.toLowerCase().includes(searchTerm) || i.code.toLowerCase().includes(searchTerm)) &&
+        (deptTerm === '' || i.dept === deptTerm)
+    );
+
+    filtered.forEach(item => {
+        tbody.innerHTML += `
+            <tr>
+                <td style="font-family:'DM Mono';color:var(--amber)">${item.code}</td>
+                <td><b>${item.name}</b></td>
+                <td>${item.dept}</td>
+                <td><span class="qty-badge">${item.qty}</span></td>
+                <td style="text-align:right">
+                    <button onclick="deleteItem('${item.id}')" style="background:none;border:none;color:var(--red);cursor:pointer">Delete</button>
+                </td>
+            </tr>
+        `;
+    });
+
+    document.getElementById('stat-total').innerText = items.length;
+    document.getElementById('stat-qty').innerText = items.reduce((a, b) => a + parseInt(b.qty), 0);
+    localStorage.setItem('audit_data', JSON.stringify(items));
+}
+
+function openAddModal() {
+    document.getElementById('f-code').value = generateNextCode();
+    document.getElementById('f-name').value = '';
+    document.getElementById('f-qty').value = '';
+    document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+
+function saveItem() {
+    const name = document.getElementById('f-name').value;
+    const code = document.getElementById('f-code').value;
+    const dept = document.getElementById('f-dept').value;
+    const qty = document.getElementById('f-qty').value;
+
+    if(!name || !qty) return alert("Please fill all fields");
+
+    items.push({ id: Date.now(), code, name, dept, qty });
+    render();
+    closeModal();
+    showToast("Item Added Successfully");
+}
+
+function deleteItem(id) {
+    items = items.filter(i => i.id != id);
+    render();
+}
+
+function exportToExcel() {
+    if(items.length === 0) return alert("No data to export");
+    
+    // CSV Content with BOM for Excel UTF-8 Compatibility
+    let csvContent = "\uFEFF"; 
+    csvContent += "Item Code,Item Name,Department,Quantity\n";
+    
+    items.forEach(i => {
+        csvContent += `${i.code},"${i.name}",${i.dept},${i.qty}\n`;
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Inventory_Audit_${new Date().toLocaleDateString()}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.innerText = msg;
+    t.style.display = 'block';
+    setTimeout(() => t.style.display = 'none', 2000);
+}
+
+document.getElementById('btn-add-item').onclick = openAddModal;
+document.getElementById('search-input').oninput = render;
+document.getElementById('dept-filter').onchange = render;
+
+// Initial Load
+render();
+</script>
+</body>
+</html>
